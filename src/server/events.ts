@@ -18,6 +18,7 @@ import type { EventoConPersona } from "@/lib/types";
 import { calcularPuntaje, DETECCIONES_AUTOMATICAS, NOMBRE_EVENTO, NOMBRE_RESPUESTA, type Respuesta } from "@/lib/score";
 import { evaluarRespuesta } from "./evaluate";
 import { urlDeSubida, urlsDeClips } from "./supabase";
+import { signosActuales, ultimosSignos } from "./vitales";
 
 export const ESTADOS_ACTIVOS: EstadoEvento[] = ["alerta", "atendiendo", "ambulancia", "emergencias", "pendiente"];
 
@@ -77,7 +78,10 @@ export async function crearIncidente(args: {
     }
   }
 
-  const contactos = await db.select().from(contacts).where(eq(contacts.homeId, persona.homeId));
+  const [contactos, signos] = await Promise.all([
+    db.select().from(contacts).where(eq(contacts.homeId, persona.homeId)),
+    signosActuales(persona.id),
+  ]);
 
   const { clasificacion, evaluacion } = args.respuesta
     ? {
@@ -92,6 +96,7 @@ export async function crearIncidente(args: {
     respuesta: clasificacion,
     hora: horaLocal(now),
     contexto: persona.context,
+    signos,
   });
 
   const resumen =
@@ -249,10 +254,11 @@ export async function fichaPorToken(token: string) {
   if (!link || link.revoked || link.expiresAt < new Date()) return null;
   const persona = await db.query.persons.findFirst({ where: eq(persons.id, link.personId) });
   if (!persona) return null;
-  const [home, contactos, evento] = await Promise.all([
+  const [home, contactos, evento, signos] = await Promise.all([
     db.query.homes.findFirst({ where: eq(homes.id, persona.homeId) }),
     db.select().from(contacts).where(eq(contacts.homeId, persona.homeId)).orderBy(asc(contacts.priority)),
     link.eventId ? db.query.events.findFirst({ where: eq(events.id, link.eventId) }) : undefined,
+    ultimosSignos(persona.id),
   ]);
-  return { link, persona, home: home!, contactos, evento: evento ?? null };
+  return { link, persona, home: home!, contactos, evento: evento ?? null, signos };
 }

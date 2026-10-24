@@ -1,4 +1,5 @@
 import type { Contact, Event, Home, Person } from "@/db/schema";
+import type { EstadoReloj } from "./vitales";
 
 export type EventoConPersona = Event & { personName: string; personAvatar: string; clipUrl: string | null };
 
@@ -15,3 +16,6 @@ export type CasaJson = {
 };
 
 export type EventosJson = { activos: EventoJson[]; recientes: EventoJson[]; silencioHasta: string | null };
+
+/** GET /api/vitales: estado del reloj por persona (solo las que mandaron datos hace poco). */
+export type RelojesJson = { relojes: Record<string, EstadoReloj> };

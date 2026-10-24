@@ -22,7 +22,8 @@ Sistema de seguridad en el hogar para personas sin autonomía personal (ver `spe
 - `/cuidador`: app móvil del cuidador. Alertas en vivo con el video, «Pedir ambulancia», «Falsa alarma», «Me ocupo» y pedidos.
 - `/historial`: registro diario.
 - `/perfiles`: fichas médicas.
-- `/ficha/[token]`: el paquete temporal que «recibe» emergencias (ubicación + ficha + incidente).
+- `/ficha/[token]`: el paquete temporal que «recibe» emergencias (ubicación + ficha + incidente + último pulso y oxígeno).
+- `/reloj`: simulador del reloj inteligente. Manda pulso, oxígeno, pasos y caídas cada 2 s a `POST /api/vitales`. Abrilo en otro celular o pestaña y dejalo visible.
 
 ## Cómo funciona
 
@@ -47,6 +48,15 @@ cámara → MediaPipe → caída
 - **Qué entendió:** el equipo de la casa muestra lo que escuchó el reconocimiento de voz y cómo lo interpretó (por ejemplo «Respondió con coherencia que está bien» o «Pedido: tiene sed»). La app del cuidador también lo muestra en cada alerta.
 - **IA de Vercel:** todo pasa por el AI Gateway. En Vercel se autentica solo; en local hace falta `AI_GATEWAY_API_KEY` o `vercel env pull`. Sin credenciales, el demo sigue andando con reglas y con la voz del navegador.
 - **Pausa tras falsa alarma:** cuando el cuidador toca «Falsa alarma», las detecciones automáticas (caída, movimiento brusco, inmovilidad, salida y grito) se ignoran durante `NEXT_PUBLIC_FALSE_ALARM_SILENCE_SECONDS` (60 s por defecto). El botón de pánico y los pedidos por voz siguen funcionando. Desde el celular se puede reactivar antes con «Reactivar ya».
+
+### Reloj inteligente (simulado)
+
+- **Lecturas:** `POST /api/vitales` recibe tandas de lecturas (`heart_rate`, `spo2`, `steps`, `fall`) y las guarda en la tabla `lecturas`. `GET /api/vitales` devuelve el estado de cada reloj: conectado (dato hace menos de 10 s), pulso, oxígeno, pasos, serie de pulso y alertas (`src/lib/vitales.ts`).
+- **Alertas del reloj:** pulso > 120 o oxígeno < 90 % son críticas; pulso 101–120, pulso < 45 u oxígeno 90–93 % son de atención; también la caída que detecta el reloj.
+- **La casa reacciona:** cuando aparece una alerta nueva, `/casa` corre el mismo flujo que con la cámara: pregunta «¿Estás bien?», evalúa la respuesta, avisa con el clip y arranca el protocolo de calma. Una caída del reloj crea un incidente «caída»; el pulso u oxígeno fuera de rango, uno «signos vitales». Este último nunca queda en «solo registro», aunque la persona diga que está bien.
+- **Puntaje:** todo incidente suma el estado del reloj si está conectado: +2 por cada valor crítico y +1 por cada valor de atención.
+- **Cuidador:** `/cuidador` muestra el reloj de cada persona (pulso, oxígeno, pasos, gráfico y alertas).
+- **Base de datos:** esta función agrega la tabla `lecturas` y el tipo de evento `signos_vitales`. Hay que correr `npm run db:push` una vez. Si no se corre, el resto del sistema sigue andando sin signos vitales.
 
 ## Puesta en marcha
 
@@ -76,6 +86,7 @@ cámara → MediaPipe → caída
 2. **Emergencia:** «caerse» frente a la cámara (o tocar «Caída») y no responder. Al celular llega la alerta con el video.
 3. Tocar **Pedir ambulancia** en el celular. Se genera el enlace con la ubicación y la ficha, con un QR.
 4. **Niño:** cambiar el perfil a Tomi y decir «tengo sed». El pedido llega al celular. Al tocar «Voy», el altavoz le avisa a Tomi.
+5. **Reloj:** en `/reloj` (otro celular) tocar «Pulso alto». La casa pregunta «¿Estás bien?»; al celular del cuidador llega la alerta con el pulso, y en el detalle del puntaje figura «Reloj: Pulso muy alto». Con «Simular caída» la casa reacciona como ante una caída de la cámara.
 
 Consejos para el demo:
 - Buena luz y la cámara a 2–3 m, de modo que se vea el cuerpo entero.

@@ -29,7 +29,7 @@ async function Contenido({ params }: { params: Promise<{ token: string }> }) {
     );
   }
 
-  const { persona, home, contactos, evento, link } = datos;
+  const { persona, home, contactos, evento, link, signos } = datos;
   const mapa = `https://www.google.com/maps?q=${home.lat},${home.lng}`;
 
   return (
@@ -65,7 +65,26 @@ async function Contenido({ params }: { params: Promise<{ token: string }> }) {
 
         <section className="rounded-2xl border border-stone-200 bg-white p-4 text-sm">
           <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-stone-500">Último registro de signos vitales</h3>
-          <p className="text-stone-600">Sin wearable conectado (fase 2: pulso, SpO₂ y temperatura).</p>
+          {signos ? (
+            <dl className="grid grid-cols-2 gap-3">
+              {signos.pulso && (
+                <div className="rounded-xl bg-stone-100 p-3">
+                  <dt className="text-xs font-semibold uppercase tracking-wide opacity-70">Pulso</dt>
+                  <dd className="text-lg font-semibold">{signos.pulso.value} lpm</dd>
+                  <dd className="text-xs text-stone-500">{fechaCasa(signos.pulso.ts)}</dd>
+                </div>
+              )}
+              {signos.spo2 && (
+                <div className="rounded-xl bg-stone-100 p-3">
+                  <dt className="text-xs font-semibold uppercase tracking-wide opacity-70">Oxígeno (SpO₂)</dt>
+                  <dd className="text-lg font-semibold">{signos.spo2.value}%</dd>
+                  <dd className="text-xs text-stone-500">{fechaCasa(signos.spo2.ts)}</dd>
+                </div>
+              )}
+            </dl>
+          ) : (
+            <p className="text-stone-600">Sin datos del reloj.</p>
+          )}
         </section>
 
         <p className="text-center text-xs text-stone-500">
