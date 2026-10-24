@@ -6,7 +6,7 @@ import { NOMBRE_EVENTO, NOMBRE_RESPUESTA, type Respuesta } from "@/lib/score";
 import { fechaCasa } from "@/lib/utils";
 import { fichaPorToken } from "@/server/events";
 
-export const metadata: Metadata = { title: "Paquete de emergencia · Guardián", robots: { index: false } };
+export const metadata: Metadata = { title: "Paquete de emergencia · Acompañar", robots: { index: false } };
 
 /** Lo que recibirían emergencias: enlace temporal con ubicación, ficha y el incidente. */
 export default function FichaPage({ params }: PageProps<"/ficha/[token]">) {

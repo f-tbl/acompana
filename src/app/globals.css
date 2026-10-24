@@ -3,9 +3,285 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-landing: var(--font-atkinson);
+}
+
+/* Paleta de la landing de Acompañar */
+@theme {
+  --color-noche: #0f2f2b; /* la casa de noche: fondo del hero y textos de títulos */
+  --color-noche-2: #1a463f;
+  --color-tinta: #1b2a27; /* texto de lectura */
+  --color-hoja: #1d6b5f; /* acento principal, coincide con el teal de la app */
+  --color-salvia: #dcebe4;
+  --color-papel: #f4f7f5;
+  --color-lampara: #f5c66a; /* la luz que se prende: la voz de la casa */
+  /* niveles del puntaje: solo para el semáforo, nunca como decoración */
+  --color-n1: #2f7562;
+  --color-n2: #946300;
+  --color-n3: #b04f17;
+  --color-n4: #b8322a;
 }
 
 body {
   background: #fafaf9;
   color: #1c1917;
+}
+
+.landing {
+  font-family: var(--font-landing), system-ui, sans-serif;
+  font-size: 1.0625rem;
+}
+
+.landing :focus-visible {
+  outline: 3px solid var(--color-lampara);
+  outline-offset: 3px;
+}
+
+.landing section:not(.bg-noche) :focus-visible,
+.landing footer :focus-visible {
+  outline-color: var(--color-hoja);
+}
+
+html:has(.landing) {
+  scroll-behavior: smooth;
+}
+
+/* Plano de la casa (sección Privacidad) */
+.plano {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-areas:
+    "dorm dorm living living"
+    "bano pasillo living living"
+    "bano pasillo cocina entrada";
+}
+@media (max-width: 30rem) {
+  .plano {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "dorm living"
+      "bano pasillo"
+      "cocina entrada";
+  }
+}
+
+/* Monitor de la cámara en el hero: simulación en loop de una caída */
+.monitor {
+  background: #0a211e;
+  border-radius: 26px;
+  padding: 14px;
+  color: #e7efe8;
+  box-shadow: 0 40px 80px -30px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.06);
+}
+.monitor-tag {
+  position: absolute;
+  top: -13px;
+  left: 24px;
+  z-index: 2;
+  border-radius: 999px;
+  background: var(--color-lampara);
+  color: var(--color-noche);
+  padding: 5px 10px;
+  font: 600 11px/1 var(--font-mono), monospace;
+  letter-spacing: 0.05em;
+}
+.monitor-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 8px 12px;
+  font: 500 12px/1 var(--font-mono), monospace;
+  color: #8fb0a6;
+}
+.rec { display: inline-flex; align-items: center; gap: 7px; color: #e7efe8; }
+.rec i { width: 8px; height: 8px; border-radius: 50%; background: #e0533f; animation: parpadeo 1.4s steps(2) infinite; }
+@keyframes parpadeo { 50% { opacity: 0.2; } }
+.feed {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 14px;
+  background: radial-gradient(120% 90% at 30% 20%, #234c45 0%, #12302b 55%, #0a1f1c 100%);
+}
+.feed .room { position: absolute; inset: 0; width: 100%; height: 100%; }
+.feed .scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgb(255 255 255 / 0.025) 0 1px, transparent 1px 3px);
+}
+.feed .scan::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 30%;
+  background: linear-gradient(180deg, transparent, rgb(220 235 228 / 0.07), transparent);
+  animation: barrido 4.5s linear infinite;
+}
+@keyframes barrido { from { top: -30%; } to { top: 100%; } }
+.feed .corner { position: absolute; width: 22px; height: 22px; border: 2px solid rgb(231 239 232 / 0.5); }
+.feed .c-tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; }
+.feed .c-tr { top: 12px; right: 12px; border-left: 0; border-bottom: 0; }
+.feed .c-bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; }
+.feed .c-br { bottom: 12px; right: 12px; border-left: 0; border-top: 0; }
+.feed .cam-label { position: absolute; top: 18px; left: 44px; font: 500 11px/1 var(--font-mono), monospace; color: rgb(231 239 232 / 0.7); }
+.feed .persona { transform-origin: 300px 330px; transition: transform 0.7s cubic-bezier(0.6, 0.05, 0.4, 1.2); }
+.feed:not([data-estado="ok"]) .persona { transform: rotate(-88deg) translate(-8px, 6px); }
+.feed .bbox {
+  position: absolute;
+  left: 43%;
+  top: 26%;
+  width: 18%;
+  height: 56%;
+  border: 2px solid var(--color-salvia);
+  border-radius: 4px;
+  transition: all 0.7s cubic-bezier(0.6, 0.05, 0.4, 1.2), border-color 0.3s;
+}
+.feed .bbox span {
+  position: absolute;
+  top: -24px;
+  left: -2px;
+  white-space: nowrap;
+  border-radius: 3px 3px 3px 0;
+  background: var(--color-salvia);
+  color: var(--color-noche);
+  padding: 5px 7px;
+  font: 600 11px/1 var(--font-mono), monospace;
+  transition: background 0.3s;
+}
+.feed:not([data-estado="ok"]) .bbox { left: 24%; top: 62%; width: 46%; height: 20%; border-color: #e0533f; }
+.feed:not([data-estado="ok"]) .bbox span { background: #e0533f; color: #fff; }
+.feed .globo {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  max-width: 64%;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--color-papel);
+  color: var(--color-tinta);
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.35;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.35s, transform 0.35s;
+}
+.feed .globo small { display: block; margin-bottom: 5px; color: var(--color-hoja); font: 700 10px/1 var(--font-mono), monospace; text-transform: uppercase; }
+.feed .globo.ver { opacity: 1; transform: none; }
+.lectura { min-width: 0; border: 1px solid #1f4740; border-radius: 12px; background: #11302b; padding: 12px 12px 10px; }
+.lectura-label { display: block; margin-bottom: 8px; color: #8fb0a6; font: 500 10px/1 var(--font-mono), monospace; letter-spacing: 0.08em; text-transform: uppercase; }
+.lectura-val { font: 600 clamp(20px, 2.2vw, 26px)/1 var(--font-mono), monospace; transition: color 0.3s; }
+.lectura-val small { margin-left: 3px; color: #8fb0a6; font-size: 11px; font-weight: 400; }
+.monitor .estado {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  margin-top: 10px;
+  border-radius: 12px;
+  background: rgb(220 235 228 / 0.12);
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.3s;
+}
+.monitor .estado.alerta { background: rgb(224 83 63 / 0.25); }
+.monitor .punto { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--color-salvia); }
+.monitor .estado.alerta .punto { background: #e0533f; animation: parpadeo 0.8s steps(2) infinite; }
+@media (max-width: 30rem) {
+  .feed .globo { max-width: 78%; font-size: 12px; }
+  .lectura { padding: 10px 8px; }
+}
+
+/* Reloj (sección Reloj) */
+.reloj-escena { position: relative; display: grid; place-items: center; padding: 90px 0; }
+.reloj-escena::before {
+  content: "";
+  position: absolute;
+  width: min(420px, 90%);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(245 198 106 / 0.45) 0%, transparent 68%);
+}
+.reloj { position: relative; width: min(290px, 78vw); }
+.reloj .correa { position: absolute; left: 50%; width: 58%; height: 90px; transform: translateX(-50%); background: #23403b; }
+.reloj .correa.arriba { top: -70px; border-radius: 18px 18px 6px 6px; }
+.reloj .correa.abajo { bottom: -70px; border-radius: 6px 6px 18px 18px; }
+.reloj .caja {
+  position: relative;
+  display: flex;
+  aspect-ratio: 1 / 1.12;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 10px solid #34544e;
+  border-radius: 64px;
+  background: #081a17;
+  padding: 26px 22px;
+  color: #e7efe8;
+  box-shadow: inset 0 0 0 2px #000, 0 30px 50px -20px rgb(0 0 0 / 0.5);
+}
+.reloj .corona { position: absolute; top: 32%; right: -20px; width: 12px; height: 44px; border-radius: 4px; background: #34544e; }
+.reloj .corazon { display: inline-block; color: #e0533f; font-size: 22px; animation: latido 0.9s ease-in-out infinite; }
+@keyframes latido { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.25); } 30% { transform: scale(1); } 45% { transform: scale(1.15); } }
+.reloj .ecg { width: 100%; height: 48px; }
+.reloj .ecg path { stroke-dasharray: 600; stroke-dashoffset: 600; animation: dibujar 2.2s linear infinite; }
+@keyframes dibujar { to { stroke-dashoffset: 0; } }
+
+/* Efectos de la landing: entrada del hero, aparición al scrollear y tarjetas que responden al hover */
+@keyframes entrar {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+.landing header .grid > div > * {
+  animation: entrar 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.landing header .grid > div > :nth-child(2) { animation-delay: 0.08s; }
+.landing header .grid > div > :nth-child(3) { animation-delay: 0.16s; }
+.landing header .grid > div > :nth-child(4) { animation-delay: 0.24s; }
+.landing header .grid > div > :nth-child(5) { animation-delay: 0.32s; }
+.landing header .monitor {
+  animation: entrar 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) 0.3s both;
+}
+
+.revelar {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 0.6s ease,
+    transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.revelar.visto {
+  opacity: 1;
+  transform: none;
+}
+
+.landing main .rounded-3xl:not(.plano),
+.landing main .rounded-\[2rem\] {
+  transition:
+    opacity 0.6s ease,
+    transform 0.25s ease,
+    box-shadow 0.25s ease,
+    background-color 0.2s;
+}
+.landing main .rounded-3xl:not(.plano):hover,
+.landing main .rounded-\[2rem\]:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 36px -18px rgb(15 47 43 / 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.landing) {
+    scroll-behavior: auto;
+  }
+  .landing header .grid > div > *,
+  .landing header .monitor,
+  .monitor *,
+  .reloj * {
+    animation: none !important;
+    transition: none !important;
+  }
+  .reloj .ecg path {
+    stroke-dashoffset: 0;
+  }
 }

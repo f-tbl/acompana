@@ -5,7 +5,7 @@ import Link from "next/link";
 import { FichaMedica } from "@/components/ficha/ficha-medica";
 import { datosCasa } from "@/server/events";
 
-export const metadata: Metadata = { title: "Fichas médicas · Guardián" };
+export const metadata: Metadata = { title: "Fichas médicas · Acompañar" };
 
 export default function PerfilesPage() {
   return (

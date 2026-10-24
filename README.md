@@ -1,4 +1,4 @@
-# Guardián: MVP para la hackatón
+# Acompañar: MVP para la hackatón
 
 Sistema de seguridad en el hogar para personas sin autonomía personal (ver `spec.md`).
 
@@ -18,12 +18,25 @@ Sistema de seguridad en el hogar para personas sin autonomía personal (ver `spe
 
 ## Pantallas
 
+- `/`: landing pública. «Probar el demo» lleva a `/demo` (pide iniciar sesión).
+- `/login`: inicio de sesión del demo. Después vuelve a la pantalla que se quería abrir (`?next=`).
+- `/demo`: menú de las pantallas del demo, con «Cerrar sesión».
 - `/casa`: el «equipo de la casa». Notebook o celular con cámara, micrófono y altavoz. Detecta caídas, pregunta por voz, escucha pedidos y corre el protocolo de calma. Tiene un **panel de demo** para simular eventos y escribir respuestas si hay mucho ruido.
 - `/cuidador`: app móvil del cuidador. Alertas en vivo con el video, «Pedir ambulancia», «Falsa alarma», «Me ocupo» y pedidos.
 - `/historial`: registro diario.
 - `/perfiles`: fichas médicas.
 - `/ficha/[token]`: el paquete temporal que «recibe» emergencias (ubicación + ficha + incidente + último pulso y oxígeno).
 - `/reloj`: simulador del reloj inteligente. Manda pulso, oxígeno, pasos y caídas cada 2 s a `POST /api/vitales`. Abrilo en otro celular o pestaña y dejalo visible.
+
+## Acceso
+
+Todo el sistema (pantallas y `/api/*`) requiere sesión, salvo `/`, `/login` y `/ficha/[token]`, que ya va protegido por su token temporal. Lo controla `src/proxy.ts`: verifica en cada pedido un JWT firmado con **HS256** (`jose`) guardado en la cookie httpOnly `acompanar_sesion`, que dura 12 h. Sin sesión, las páginas redirigen a `/login` y la API responde `401`.
+
+| Variable | Uso |
+| --- | --- |
+| `AUTH_SECRET` | Clave HS256 para firmar los JWT. Obligatoria en producción (`openssl rand -base64 32`). |
+| `DEMO_USER` | Usuario del demo (por defecto `demo`). |
+| `DEMO_PASSWORD` | Contraseña del demo. Obligatoria en producción; en local, si falta, es `demo`. |
 
 ## Cómo funciona
 

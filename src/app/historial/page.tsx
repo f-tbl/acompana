@@ -7,7 +7,7 @@ import { NOMBRE_EVENTO } from "@/lib/score";
 import { diaCasa, fechaCasa } from "@/lib/utils";
 import { listarEventos } from "@/server/events";
 
-export const metadata: Metadata = { title: "Historial · Guardián" };
+export const metadata: Metadata = { title: "Historial · Acompañar" };
 
 export default function HistorialPage() {
   return (

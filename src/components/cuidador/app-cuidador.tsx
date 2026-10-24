@@ -69,6 +69,18 @@ export function AppCuidador() {
     }
   }
 
+  async function accionMasiva(lista: EventoJson[], a: Accion) {
+    setEnviando("todas" + a);
+    try {
+      // Por evento: si alguno ya cambió de estado (409), los demás se aplican igual.
+      await Promise.allSettled(lista.map((e) => api(`/api/eventos/${e.id}/accion`, { accion: a })));
+      avisarCambio();
+      await refrescar();
+    } finally {
+      setEnviando(null);
+    }
+  }
+
   async function reactivar() {
     setEnviando("reactivar");
     try {
@@ -92,13 +104,15 @@ export function AppCuidador() {
     : 0;
   const alertas = datos?.activos.filter((e) => e.type !== "pedido") ?? [];
   const pedidos = datos?.activos.filter((e) => e.status === "pendiente") ?? [];
+  const cancelables = alertas.filter((e) => e.status === "alerta" || e.status === "atendiendo");
+  const sinAtender = alertas.filter((e) => e.status === "alerta");
   const historial = datos?.recientes.filter((e) => !datos.activos.some((a) => a.id === e.id)).slice(0, 8) ?? [];
 
   return (
     <main className="mx-auto min-h-dvh max-w-md bg-stone-50 pb-10 text-stone-900">
       <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-stone-200 bg-stone-50/90 px-4 py-3 backdrop-blur">
         <div className="min-w-0 flex-1">
-          <h1 className="font-semibold leading-tight">{casa?.home.name ?? "Guardián"}</h1>
+          <h1 className="font-semibold leading-tight">{casa?.home.name ?? "Acompañar"}</h1>
           <p className="flex items-center gap-1 text-xs text-stone-500">
             {casa?.hubOnline ? (
               <>
@@ -155,6 +169,30 @@ export function AppCuidador() {
             <CircleCheck className="mx-auto size-8 text-emerald-600" />
             <p className="mt-2 font-medium">Todo tranquilo</p>
             <p className="text-sm text-stone-500">No hay alertas ni pedidos pendientes.</p>
+          </div>
+        )}
+
+        {cancelables.length > 1 && (
+          <div className="rounded-2xl border border-stone-200 bg-white p-3">
+            <p className="mb-2 text-sm text-stone-600">
+              Hay <b>{cancelables.length} alertas abiertas</b>. Resolvelas todas de una vez:
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => accionMasiva(cancelables, "cancelar")}
+                disabled={!!enviando}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-stone-300 px-3 py-2.5 text-sm font-medium disabled:opacity-50"
+              >
+                <X className="size-4" /> Todas falsa alarma
+              </button>
+              <button
+                onClick={() => accionMasiva(sinAtender, "atender")}
+                disabled={!!enviando || sinAtender.length === 0}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-stone-300 px-3 py-2.5 text-sm font-medium disabled:opacity-50"
+              >
+                <Hand className="size-4" /> Me ocupo de todas
+              </button>
+            </div>
           </div>
         )}
 
