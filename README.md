@@ -12,8 +12,9 @@ Sistema de seguridad en el hogar para personas sin autonomía personal (ver `spe
 | Tiempo real | Supabase Realtime (broadcast) + polling de respaldo |
 | Video del incidente | MediaRecorder en el navegador → Supabase Storage (bucket privado, URL firmada) |
 | Detección de caídas | MediaPipe Pose Landmarker, **corre en el navegador** (WASM/GPU) |
-| Voz | Web Speech API (`speechSynthesis` + `SpeechRecognition`, usar Chrome) |
-| Evaluación de respuestas | Claude (`@anthropic-ai/sdk`, salida estructurada con Zod); sin clave usa reglas |
+| Escucha | Web Speech API (`SpeechRecognition`, usar Chrome) |
+| Voz de la casa | AI SDK `generateSpeech` por el Vercel AI Gateway (`google/gemini-3.8-flash-lite-tts`); respaldo: voz del navegador |
+| Evaluación de respuestas | AI SDK (`generateText` + `Output.object` con Zod) por el AI Gateway, con `google/gemini-3.8-flash`; sin credenciales usa reglas |
 
 ## Pantallas
 
@@ -30,7 +31,7 @@ Sistema de seguridad en el hogar para personas sin autonomía personal (ver `spe
 cámara → MediaPipe → caída                                                 
   → altavoz: «¿Estás bien?»                                                
   → escucha 15 s ──────────────▶ POST /api/incidentes                      
-                                   Claude clasifica la respuesta           
+                                   la IA (AI Gateway) clasifica la respuesta
                                    puntaje 1–10 (src/lib/score.ts) ──▶ Postgres (Drizzle)
   ◀── URL firmada si nivel ≥ 2                                             
   → sube clip de ~10 s ──────────────────────────────────────────────▶ Storage
@@ -43,6 +44,9 @@ cámara → MediaPipe → caída
   - Nivel 4–6: si nadie responde en `NEXT_PUBLIC_ESCALATION_SECONDS`, avisa al contacto secundario.
   - Nivel 7–8: avisa también al vecino y a teleasistencia; si nadie responde, llama a emergencias (simulado).
   - Nivel 9–10: arranca una cuenta regresiva de `NEXT_PUBLIC_COUNTDOWN_SECONDS` y después llama a emergencias.
+- **Qué entendió:** el equipo de la casa muestra lo que escuchó el reconocimiento de voz y cómo lo interpretó (por ejemplo «Respondió con coherencia que está bien» o «Pedido: tiene sed»). La app del cuidador también lo muestra en cada alerta.
+- **IA de Vercel:** todo pasa por el AI Gateway. En Vercel se autentica solo; en local hace falta `AI_GATEWAY_API_KEY` o `vercel env pull`. Sin credenciales, el demo sigue andando con reglas y con la voz del navegador.
+- **Pausa tras falsa alarma:** cuando el cuidador toca «Falsa alarma», las detecciones automáticas (caída, movimiento brusco, inmovilidad, salida y grito) se ignoran durante `NEXT_PUBLIC_FALSE_ALARM_SILENCE_SECONDS` (60 s por defecto). El botón de pánico y los pedidos por voz siguen funcionando. Desde el celular se puede reactivar antes con «Reactivar ya».
 
 ## Puesta en marcha
 
@@ -96,6 +100,6 @@ src/
   components/          hub (casa), cuidador, ficha
   db/                  esquema y cliente Drizzle
   lib/                 puntaje, escalamiento, voz, detector de caídas, grabador de clips
-  server/              lógica de servidor (eventos, evaluación con Claude, Supabase)
+  server/              lógica de servidor (eventos, evaluación con IA, voz, Supabase)
 scripts/seed.ts        datos del demo
 ```

@@ -12,10 +12,10 @@ import {
   type Notificacion,
   type TipoEvento,
 } from "@/db/schema";
-import { FICHA_LINK_HOURS, HOME_TIMEZONE, HUB_OFFLINE_AFTER_MS } from "@/lib/config";
+import { FALSE_ALARM_SILENCE_SECONDS, FICHA_LINK_HOURS, HOME_TIMEZONE, HUB_OFFLINE_AFTER_MS } from "@/lib/config";
 import { avisosIniciales, estadoInicial, pasoDeEscalamiento } from "@/lib/escalation";
 import type { EventoConPersona } from "@/lib/types";
-import { calcularPuntaje, NOMBRE_EVENTO, NOMBRE_RESPUESTA, type Respuesta } from "@/lib/score";
+import { calcularPuntaje, DETECCIONES_AUTOMATICAS, NOMBRE_EVENTO, NOMBRE_RESPUESTA, type Respuesta } from "@/lib/score";
 import { evaluarRespuesta } from "./evaluate";
 import { urlDeSubida, urlsDeClips } from "./supabase";
 
@@ -69,6 +69,14 @@ export async function crearIncidente(args: {
 }) {
   const persona = await db.query.persons.findFirst({ where: eq(persons.id, args.personId) });
   if (!persona) throw new Error("Persona inexistente");
+
+  if (DETECCIONES_AUTOMATICAS.includes(args.tipo)) {
+    const home = await db.query.homes.findFirst({ where: eq(homes.id, persona.homeId) });
+    if (home?.silenceUntil && home.silenceUntil > new Date()) {
+      return { event: null, upload: null, silencioHasta: home.silenceUntil };
+    }
+  }
+
   const contactos = await db.select().from(contacts).where(eq(contacts.homeId, persona.homeId));
 
   const { clasificacion, evaluacion } = args.respuesta
@@ -116,7 +124,7 @@ export async function crearIncidente(args: {
       ? await urlDeSubida(`${event.id}.${args.clipExt}`)
       : null;
 
-  return { event, upload };
+  return { event, upload, silencioHasta: null };
 }
 
 export async function guardarClip(eventId: string, path: string) {
@@ -154,6 +162,13 @@ export async function aplicarAccion(eventId: string, accion: Accion) {
     .where(and(eq(events.id, eventId), inArray(events.status, t.desde)))
     .returning();
   if (!event) return null;
+
+  if (accion === "cancelar") {
+    await db
+      .update(homes)
+      .set({ silenceUntil: new Date(now.getTime() + FALSE_ALARM_SILENCE_SECONDS * 1000) })
+      .where(eq(homes.id, event.homeId));
+  }
 
   if (accion === "ambulancia") {
     const fichaToken = await crearLinkFicha(event.personId, event.id);
@@ -211,6 +226,17 @@ export async function listarEventos(opts: { limit?: number; soloActivos?: boolea
     personAvatar: r.personAvatar,
     clipUrl: r.event.clipPath ? (clips.get(r.event.clipPath) ?? null) : null,
   }));
+}
+
+/** El cuidador puede cortar la pausa antes de tiempo. */
+export async function reactivarDeteccion() {
+  const home = await casaActual();
+  await db.update(homes).set({ silenceUntil: null }).where(eq(homes.id, home.id));
+}
+
+export async function silencioActual() {
+  const home = await casaActual();
+  return home.silenceUntil && home.silenceUntil > new Date() ? home.silenceUntil : null;
 }
 
 export async function latidoHub() {

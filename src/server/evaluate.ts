@@ -1,13 +1,19 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 import type { Evaluacion, Person, TipoEvento } from "@/db/schema";
 import { clasificarFrasePorReglas, clasificarRespuestaPorReglas } from "@/lib/heuristics";
 import { NOMBRE_EVENTO, type Respuesta } from "@/lib/score";
+import { gatewayDisponible } from "./ai";
 
-const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-haiku-5-5";
-const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ timeout: 8_000, maxRetries: 1 }) : null;
+// AI SDK + Vercel AI Gateway: el modelo se nombra "proveedor/modelo" y se paga con la cuenta de Vercel.
+const MODEL = process.env.AI_MODEL ?? "google/gemini-3.8-flash";
+
+const opcionesComunes = {
+  model: MODEL,
+  reasoning: "low" as const, // la respuesta tiene que salir rápido: la persona está esperando
+  maxRetries: 1,
+};
 
 function describirPersona(p: Person) {
   const perfil = p.perfil === "nino" ? `niño/a de ${p.age} años` : `persona dependiente de ${p.age} años`;
@@ -31,12 +37,12 @@ export async function evaluarRespuesta(args: {
     return { clasificacion: r.clasificacion, evaluacion: { ...r, fuente: "reglas" } };
   }
 
-  if (client) {
+  if (gatewayDisponible()) {
     try {
-      const res = await client.messages.parse({
-        model: MODEL,
-        max_tokens: 1024,
-        output_config: { effort: "low", format: zodOutputFormat(RespuestaSchema) },
+      const { output } = await generateText({
+        ...opcionesComunes,
+        abortSignal: AbortSignal.timeout(8_000),
+        output: Output.object({ schema: RespuestaSchema }),
         system:
           "Sos el módulo de evaluación de un sistema de cuidado en el hogar. Tras detectar un evento, " +
           "el altavoz le preguntó a la persona «¿Estás bien? ¿Pasó algo?». Clasificá su respuesta:\n" +
@@ -45,19 +51,9 @@ export async function evaluarRespuesta(args: {
           "- dolor: dice que se lastimó, le duele algo o no puede levantarse.\n" +
           "- confusa: incoherente, desorientada o sin relación con la pregunta.\n" +
           "Ante la duda entre «bien» y otra categoría, elegí la otra: es más seguro.",
-        messages: [
-          {
-            role: "user",
-            content: `Persona: ${describirPersona(persona)}\nEvento: ${NOMBRE_EVENTO[tipo]}\nRespuesta transcripta: «${texto}»`,
-          },
-        ],
+        prompt: `Persona: ${describirPersona(persona)}\nEvento: ${NOMBRE_EVENTO[tipo]}\nRespuesta transcripta: «${texto}»`,
       });
-      if (res.stop_reason !== "refusal" && res.parsed_output) {
-        return {
-          clasificacion: res.parsed_output.clasificacion,
-          evaluacion: { ...res.parsed_output, fuente: "claude" },
-        };
-      }
+      return { clasificacion: output.clasificacion, evaluacion: { ...output, fuente: "ia" } };
     } catch (err) {
       console.error("evaluarRespuesta: uso reglas", err);
     }
@@ -77,25 +73,21 @@ const FraseSchema = z.object({
 
 export async function interpretarFrase(args: { persona: Person; texto: string }) {
   const { persona, texto } = args;
-  if (client) {
+  if (gatewayDisponible()) {
     try {
-      const res = await client.messages.parse({
-        model: MODEL,
-        max_tokens: 1024,
-        output_config: { effort: "low", format: zodOutputFormat(FraseSchema) },
+      const { output } = await generateText({
+        ...opcionesComunes,
+        abortSignal: AbortSignal.timeout(8_000),
+        output: Output.object({ schema: FraseSchema }),
         system:
           "Sos la voz de un sistema de cuidado en el hogar. La persona te habla por un micrófono del ambiente. " +
           "Decidí si hay que avisarle al adulto responsable y qué contestarle. Hablá en español rioplatense, " +
           "con frases cortas y simples. Con niños usá lenguaje muy simple. Con personas con demencia usá la " +
           "técnica de validación: no contradigas, tranquilizá y redirigí. Nunca prometas algo que el sistema no " +
           "puede hacer: solo avisás al cuidador.",
-        messages: [
-          { role: "user", content: `Persona: ${describirPersona(persona)}\nDijo: «${texto}»` },
-        ],
+        prompt: `Persona: ${describirPersona(persona)}\nDijo: «${texto}»`,
       });
-      if (res.stop_reason !== "refusal" && res.parsed_output) {
-        return { ...res.parsed_output, fuente: "claude" as const };
-      }
+      return { ...output, fuente: "ia" as const };
     } catch (err) {
       console.error("interpretarFrase: uso reglas", err);
     }

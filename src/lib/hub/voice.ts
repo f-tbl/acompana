@@ -1,6 +1,47 @@
-// Voz con la Web Speech API del navegador (anda bien en Chrome/Edge).
+// Escucha con la Web Speech API del navegador (anda bien en Chrome/Edge).
 // Un solo reconocedor con dos modos: "ambiente" (modo conversación, escucha siempre)
 // y "pregunta" (espera la respuesta a «¿Estás bien?» con timeout).
+// Habla con voz generada por IA (/api/voz, AI Gateway); si falla, con la voz del navegador.
+
+const audios = new Map<string, Promise<string | null>>(); // texto → object URL del audio
+
+/** Pide (una sola vez por texto) el audio con voz natural. Sirve para precargar frases fijas. */
+export function precargarVoz(texto: string) {
+  let audio = audios.get(texto);
+  if (!audio) {
+    audio = fetch("/api/voz", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texto }),
+    })
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((b) => (b ? URL.createObjectURL(b) : null))
+      .catch(() => null);
+    audios.set(texto, audio);
+    // Si falló, que se pueda reintentar más tarde.
+    void audio.then((url) => url || audios.delete(texto));
+  }
+  return audio;
+}
+
+function reproducir(url: string) {
+  return new Promise<boolean>((resolve) => {
+    const a = new Audio(url);
+    const t = setTimeout(() => resolve(true), 30_000);
+    a.onended = () => {
+      clearTimeout(t);
+      resolve(true);
+    };
+    a.onerror = () => {
+      clearTimeout(t);
+      resolve(false);
+    };
+    a.play().catch(() => {
+      clearTimeout(t);
+      resolve(false);
+    });
+  });
+}
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -43,6 +84,9 @@ export class Voz {
   private corriendo = false;
   private resolverPregunta: ((t: string | null) => void) | null = null;
   escuchaAmbiente = true;
+  vozNatural = true;
+  /** Con qué voz salió la última frase, para mostrarlo en pantalla. */
+  ultimaFuente: "ia" | "navegador" | null = null;
 
   constructor(
     private onFrase: (texto: string) => void,
@@ -102,7 +146,19 @@ export class Voz {
   async decir(texto: string) {
     this.hablando = true;
     this.rec?.abort(); // que no se escuche a sí mismo
-    await new Promise<void>((resolve) => {
+    const url = this.vozNatural ? await precargarVoz(texto) : null;
+    if (url && (await reproducir(url))) {
+      this.ultimaFuente = "ia";
+    } else {
+      this.ultimaFuente = "navegador";
+      await this.decirConNavegador(texto);
+    }
+    this.hablando = false;
+    this.asegurar();
+  }
+
+  private decirConNavegador(texto: string) {
+    return new Promise<void>((resolve) => {
       const u = new SpeechSynthesisUtterance(texto);
       u.lang = LANG;
       const voz = elegirVoz();
@@ -114,8 +170,6 @@ export class Voz {
       setTimeout(fin, 2000 + texto.length * 90); // por si el navegador no dispara onend
       speechSynthesis.speak(u);
     });
-    this.hablando = false;
-    this.asegurar();
   }
 
   preguntar(timeoutMs: number) {

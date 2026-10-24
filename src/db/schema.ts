@@ -49,6 +49,8 @@ export const homes = pgTable("homes", {
   lat: doublePrecision("lat").notNull(),
   lng: doublePrecision("lng").notNull(),
   hubLastSeen: timestamp("hub_last_seen", { withTimezone: true }),
+  // Tras una falsa alarma, las detecciones automáticas se ignoran hasta este momento.
+  silenceUntil: timestamp("silence_until", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -103,7 +105,7 @@ export type Notificacion = {
 export type Evaluacion = {
   clasificacion: string;
   motivo: string;
-  fuente: "claude" | "reglas";
+  fuente: "ia" | "reglas";
 };
 
 export type FactorPuntaje = { factor: string; puntos: number };

@@ -1,12 +1,12 @@
 "use client";
 
-import { Ambulance, BellRing, Check, CircleCheck, Hand, History, Siren, Volume2, Wifi, WifiOff, X } from "lucide-react";
+import { Ambulance, BellRing, Check, CircleCheck, Hand, History, PauseCircle, Siren, Volume2, Wifi, WifiOff, X } from "lucide-react";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { proximoEscalamiento } from "@/lib/escalation";
 import { api, avisarCambio, useEnVivo } from "@/lib/live";
-import { NIVELES, NOMBRE_EVENTO, type Nivel } from "@/lib/score";
+import { NIVELES, NOMBRE_EVENTO, NOMBRE_RESPUESTA, type Nivel, type Respuesta } from "@/lib/score";
 import type { CasaJson, EventoJson, EventosJson } from "@/lib/types";
 import { cn, haceCuanto, horaCorta } from "@/lib/utils";
 
@@ -66,6 +66,17 @@ export function AppCuidador() {
     }
   }
 
+  async function reactivar() {
+    setEnviando("reactivar");
+    try {
+      await api("/api/reactivar", {});
+      avisarCambio();
+      await refrescar();
+    } finally {
+      setEnviando(null);
+    }
+  }
+
   function activarSonido() {
     audioRef.current ??= new AudioContext();
     void audioRef.current.resume();
@@ -73,6 +84,9 @@ export function AppCuidador() {
     setSonido(true);
   }
 
+  const silencioRestante = datos?.silencioHasta
+    ? Math.ceil((Date.parse(datos.silencioHasta) - ahora) / 1000)
+    : 0;
   const alertas = datos?.activos.filter((e) => e.type !== "pedido") ?? [];
   const pedidos = datos?.activos.filter((e) => e.status === "pendiente") ?? [];
   const historial = datos?.recientes.filter((e) => !datos.activos.some((a) => a.id === e.id)).slice(0, 8) ?? [];
@@ -115,6 +129,23 @@ export function AppCuidador() {
         </p>
       )}
 
+      {ahora > 0 && silencioRestante > 0 && (
+        <div className="mx-4 mt-4 flex items-center gap-3 rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm">
+          <PauseCircle className="size-5 shrink-0 text-stone-500" />
+          <p className="min-w-0 flex-1">
+            Detección automática en pausa por la falsa alarma. Se reactiva en <b className="tabular-nums">{silencioRestante} s</b>.
+            <span className="block text-xs text-stone-500">El botón de pánico y los pedidos por voz siguen funcionando.</span>
+          </p>
+          <button
+            onClick={reactivar}
+            disabled={!!enviando}
+            className="shrink-0 rounded-lg bg-stone-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+          >
+            Reactivar ya
+          </button>
+        </div>
+      )}
+
       <section className="space-y-4 px-4 pt-4">
         {alertas.length === 0 && pedidos.length === 0 && datos && (
           <div className="rounded-2xl border border-stone-200 bg-white p-6 text-center">
@@ -134,7 +165,7 @@ export function AppCuidador() {
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium uppercase tracking-wide text-sky-700">Pedido · {haceCuanto(e.createdAt, ahora)}</p>
               <p className="font-semibold">{e.summary}</p>
-              {e.responseText && <p className="text-sm text-stone-600">Dijo: «{e.responseText}»</p>}
+              {e.responseText && <p className="text-sm text-stone-600">Escuchó: «{e.responseText}»</p>}
             </div>
             <button
               onClick={() => accion(e, "atendido")}
@@ -222,11 +253,14 @@ function TarjetaAlerta({
               {e.personName} · {haceCuanto(e.createdAt, ahora)}
             </p>
             <p className="text-sm text-stone-600">
-              {e.responseText ? <>Respondió: «{e.responseText}»</> : "No respondió a la pregunta por voz"}
+              {e.responseText ? <>Escuchó: «{e.responseText}»</> : "No respondió a la pregunta por voz"}
             </p>
-            {e.assessment?.motivo && (
-              <p className="text-xs text-stone-500">
-                Evaluación ({e.assessment.fuente === "claude" ? "IA" : "reglas"}): {e.assessment.motivo}
+            {e.assessment && (
+              <p className="text-sm text-stone-600">
+                Entendió: <b>{NOMBRE_RESPUESTA[e.assessment.clasificacion as Respuesta] ?? e.assessment.clasificacion}</b>
+                <span className="block text-xs text-stone-500">
+                  {e.assessment.motivo} ({e.assessment.fuente === "ia" ? "IA" : "reglas"})
+                </span>
               </p>
             )}
           </div>

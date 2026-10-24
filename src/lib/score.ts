@@ -30,6 +30,12 @@ const AJUSTE_RESPUESTA: Record<Respuesta, number> = {
   no_aplica: 0,
 };
 
+/**
+ * Eventos que detectan solos la cámara o el micrófono: se pausan tras una falsa alarma.
+ * El botón de pánico y los pedidos por voz nunca se pausan.
+ */
+export const DETECCIONES_AUTOMATICAS: TipoEvento[] = ["caida", "descenso_brusco", "inmovilidad", "salida", "grito"];
+
 export const NOMBRE_EVENTO: Record<TipoEvento, string> = {
   caida: "Caída detectada",
   descenso_brusco: "Movimiento brusco",

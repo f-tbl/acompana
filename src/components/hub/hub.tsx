@@ -1,16 +1,16 @@
 "use client";
 
 import type { PoseLandmarker as PoseLandmarkerT } from "@mediapipe/tasks-vision";
-import { Camera, CameraOff, Ear, EarOff, Mic, Play, Send, Volume2 } from "lucide-react";
+import { Brain, Camera, CameraOff, Ear, EarOff, Mic, Play, Send, Sparkles, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Person, TipoEvento } from "@/db/schema";
 import { AMBIENTES, frasesDeCalma } from "@/lib/calm";
-import { ANSWER_TIMEOUT_MS } from "@/lib/config";
+import { ANSWER_TIMEOUT_MS, FALSE_ALARM_SILENCE_SECONDS } from "@/lib/config";
 import { ClipRecorder } from "@/lib/hub/clip-recorder";
 import { FallDetector, type EstadoPose } from "@/lib/hub/fall-detector";
-import { desbloquearAudio, Voz } from "@/lib/hub/voice";
+import { desbloquearAudio, precargarVoz, Voz } from "@/lib/hub/voice";
 import { api, avisarCambio, subirClip, useEnVivo } from "@/lib/live";
-import { NOMBRE_EVENTO } from "@/lib/score";
+import { DETECCIONES_AUTOMATICAS, NOMBRE_EVENTO, NOMBRE_RESPUESTA, type Respuesta } from "@/lib/score";
 import type { CasaJson, EventoJson, EventosJson } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,15 @@ const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 
 type Fase = "inactivo" | "vigilando" | "preguntando" | "evaluando" | "calmando";
+/** Lo que escuchó el reconocimiento de voz y cómo lo interpretó el sistema. */
+type Entendido = {
+  contexto: string;
+  escuche: string | null;
+  entendi: string | null; // null mientras se evalúa
+  detalle?: string;
+  fuente?: "ia" | "reglas";
+  tono: "ok" | "alerta" | "info";
+};
 type Linea = { id: number; quien: "sistema" | "persona" | "info" | "error"; texto: string; hora: string };
 
 const SIMULACIONES: { tipo: TipoEvento; label: string }[] = [
@@ -43,7 +52,12 @@ export function Hub() {
   const [pose, setPose] = useState<EstadoPose | null>(null);
   const [modelo, setModelo] = useState<"cargando" | "listo" | "error" | null>(null);
   const [escucha, setEscucha] = useState(true);
+  const [vozIa, setVozIa] = useState(true);
+  const [fuenteVoz, setFuenteVoz] = useState<"ia" | "navegador" | null>(null);
+  const [entendido, setEntendido] = useState<Entendido | null>(null);
   const [texto, setTexto] = useState("");
+  const [silencioHasta, setSilencioHasta] = useState(0);
+  const [ahora, setAhora] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -55,6 +69,7 @@ export function Hub() {
   const ocupadoRef = useRef(false);
   const calmandoRef = useRef<string | null>(null);
   const seguidosRef = useRef(new Map<string, EventoJson["status"]>());
+  const silencioRef = useRef(0); // ms epoch: hasta cuándo se ignoran las detecciones automáticas
   const lineaId = useRef(0);
 
   // Refs con el último valor para usar dentro de callbacks de larga vida (rAF, voz).
@@ -75,6 +90,7 @@ export function Hub() {
     async (t: string) => {
       anotar("sistema", t);
       await vozRef.current?.decir(t);
+      setFuenteVoz(vozRef.current?.ultimaFuente ?? null);
     },
     [anotar],
   );
@@ -118,6 +134,12 @@ export function Hub() {
     async (tipo: TipoEvento, simulado = false) => {
       const p = personaActual();
       if (!p || ocupadoRef.current) return;
+      const restante = Math.ceil((silencioRef.current - Date.now()) / 1000);
+      if (DETECCIONES_AUTOMATICAS.includes(tipo) && restante > 0) {
+        detectorRef.current.reiniciar(performance.now());
+        anotar("info", `${NOMBRE_EVENTO[tipo]} ignorado: pausa por falsa alarma (quedan ${restante} s)`);
+        return;
+      }
       ocupadoRef.current = true;
       detectorRef.current.reiniciar(performance.now());
       anotar("info", `${simulado ? "Simulado" : "Detectado"}: ${NOMBRE_EVENTO[tipo]} en ${estadoRef.current.ambiente}`);
@@ -128,9 +150,13 @@ export function Hub() {
         await decir(`${p.name}, ¿estás bien? ¿Pasó algo?`);
         const respuesta = (await vozRef.current?.preguntar(ANSWER_TIMEOUT_MS)) ?? null;
         anotar(respuesta ? "persona" : "info", respuesta ?? `Sin respuesta en ${ANSWER_TIMEOUT_MS / 1000} s`);
+        setEntendido({ contexto: "Respuesta a «¿Estás bien?»", escuche: respuesta, entendi: null, tono: "info" });
         setFase("evaluando");
 
-        const { event, upload } = await api<{ event: EventoJson; upload: { path: string; token: string } | null }>(
+        const { event, upload } = await api<{
+          event: EventoJson | null;
+          upload: { path: string; token: string } | null;
+        }>(
           "/api/incidentes",
           {
             personId: p.id,
@@ -140,7 +166,21 @@ export function Hub() {
             clipExt: recorderRef.current?.extension,
           },
         );
+        if (!event) {
+          anotar("info", "Ignorado: la detección automática está en pausa por una falsa alarma");
+          await decir("Perdón, me confundí. Sigo atento.");
+          return;
+        }
         seguidosRef.current.set(event.id, event.status);
+        const clasificacion = (event.assessment?.clasificacion ?? "sin_respuesta") as Respuesta;
+        setEntendido({
+          contexto: "Respuesta a «¿Estás bien?»",
+          escuche: respuesta,
+          entendi: NOMBRE_RESPUESTA[clasificacion],
+          detalle: `${event.assessment?.motivo ?? ""} · puntaje ${event.score}/10`,
+          fuente: event.assessment?.fuente,
+          tono: clasificacion === "bien" ? "ok" : "alerta",
+        });
         anotar("info", `Puntaje ${event.score}/10 (nivel ${event.level}) · ${event.assessment?.motivo ?? ""}`);
         avisarCambio();
 
@@ -174,11 +214,27 @@ export function Hub() {
       const p = personaActual();
       if (!p || t.length < 3 || ocupadoRef.current) return;
       anotar("persona", t);
+      setEntendido({ contexto: "Le habló al sistema", escuche: t, entendi: null, tono: "info" });
       try {
-        const res = await api<{ tipo: string; respuesta: string; resumen: string; event: EventoJson | null }>(
+        const res = await api<{
+          tipo: "pedido" | "ayuda" | "charla";
+          respuesta: string;
+          resumen: string;
+          fuente: "ia" | "reglas";
+          event: EventoJson | null;
+        }>(
           "/api/hablar",
           { personId: p.id, room: estadoRef.current.ambiente, texto: t },
         );
+        setEntendido({
+          contexto: "Le habló al sistema",
+          escuche: t,
+          entendi:
+            res.tipo === "pedido" ? `Pedido: ${res.resumen}` : res.tipo === "ayuda" ? `Pide ayuda: ${res.resumen}` : "Charla, no hace falta avisar",
+          detalle: res.event ? "Se avisó al celular del cuidador" : undefined,
+          fuente: res.fuente,
+          tono: res.tipo === "ayuda" ? "alerta" : res.tipo === "pedido" ? "ok" : "info",
+        });
         if (!res.event) return anotar("info", "Charla: no hace falta avisar");
         seguidosRef.current.set(res.event.id, res.event.status);
         anotar("info", `Aviso al celular: ${res.resumen}`);
@@ -198,7 +254,9 @@ export function Hub() {
     try {
       const { cambios } = await api<{ cambios: number }>("/api/escalar", {});
       if (cambios) avisarCambio();
-      const { activos, recientes } = await api<EventosJson>("/api/eventos?limit=20");
+      const { activos, recientes, silencioHasta } = await api<EventosJson>("/api/eventos?limit=20");
+      silencioRef.current = silencioHasta ? Date.parse(silencioHasta) : 0;
+      setSilencioHasta(silencioRef.current);
       const todos = new Map([...recientes, ...activos].map((e) => [e.id, e]));
       for (const [id, anterior] of seguidosRef.current) {
         const e = todos.get(id);
@@ -207,7 +265,12 @@ export function Hub() {
         if (e.status === "cancelada" || e.status === "resuelta") {
           if (calmandoRef.current === id) calmandoRef.current = null;
           setFase((f) => (f === "calmando" ? "vigilando" : f));
-          anotar("info", e.status === "cancelada" ? "El cuidador lo marcó como falsa alarma" : "Incidente resuelto");
+          anotar(
+            "info",
+            e.status === "cancelada"
+              ? `El cuidador lo marcó como falsa alarma: detección automática en pausa ${FALSE_ALARM_SILENCE_SECONDS} s`
+              : "Incidente resuelto",
+          );
         } else if (e.status === "atendiendo") {
           void decir(`${principal()} ya vio el aviso y se está ocupando.`);
         } else if (e.status === "ambulancia" || e.status === "emergencias") {
@@ -240,8 +303,33 @@ export function Hub() {
   }, [camaraPermitida, fase === "inactivo"]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!silencioHasta) return;
+    const tick = () => setAhora(Date.now());
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [silencioHasta]);
+
+  useEffect(() => {
     if (vozRef.current) vozRef.current.escuchaAmbiente = escucha;
   }, [escucha]);
+
+  useEffect(() => {
+    if (vozRef.current) vozRef.current.vozNatural = vozIa;
+  }, [vozIa]);
+
+  // Precarga la voz de las frases fijas para que la pregunta salga sin demora.
+  useEffect(() => {
+    if (fase === "inactivo" || !persona || !vozIa) return;
+    const contacto = casa?.contacts.find((c) => c.role === "principal")?.name ?? "tu familia";
+    for (const f of [
+      `${persona.name}, ¿estás bien? ¿Pasó algo?`,
+      "Bueno, me quedo tranquilo. Si necesitás algo, decímelo.",
+      `Ya le avisé a ${contacto}. Ya viene ayuda.`,
+    ]) {
+      void precargarVoz(f);
+    }
+  }, [fase === "inactivo", persona, casa, vozIa]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onFraseRef = useRef(onFrase);
   const incidenteRef = useRef(manejarIncidente);
@@ -274,6 +362,7 @@ export function Hub() {
     );
     vozRef.current = voz;
     voz.escuchaAmbiente = escucha;
+    voz.vozNatural = vozIa;
     voz.iniciar();
     if (!voz.disponible) anotar("error", "Este navegador no reconoce voz: usá Chrome, o escribí las respuestas abajo.");
 
@@ -420,6 +509,9 @@ export function Hub() {
                     <Camera className="size-3" /> {modelo === "listo" ? "Detección activa" : modelo === "error" ? "Sin detección" : "Cargando modelo…"}
                   </Chip>
                 )}
+                {silencioHasta > ahora && ahora > 0 && (
+                  <Chip tono="alerta">Pausa por falsa alarma · {Math.ceil((silencioHasta - ahora) / 1000)} s</Chip>
+                )}
                 {pose && camaraPermitida && modelo === "listo" && (
                   <Chip tono={pose.fase === "observando" ? "alerta" : "info"}>
                     {pose.visible ? `Torso ${Math.round(pose.anguloTorso)}°` : "Sin persona en cuadro"}
@@ -437,8 +529,16 @@ export function Hub() {
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Panel de demo</h2>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <h2 className="mr-auto text-sm font-semibold">Panel de demo</h2>
+              <button
+                onClick={() => setVozIa((v) => !v)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-300 hover:bg-white/5"
+              >
+                <Sparkles className="size-3.5" />
+                Voz {vozIa ? "IA" : "del navegador"}
+                {fuenteVoz === "navegador" && vozIa && <span className="text-amber-300">(usando respaldo)</span>}
+              </button>
               <button
                 onClick={() => setEscucha((e) => !e)}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-300 hover:bg-white/5"
@@ -483,6 +583,46 @@ export function Hub() {
               </p>
             )}
           </div>
+          {fase !== "inactivo" && (
+            <div className="space-y-3 border-b border-white/10 p-4">
+              <div>
+                <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
+                  <Mic className="size-3.5" /> Escuché
+                  {entendido && <span className="normal-case tracking-normal text-slate-500">· {entendido.contexto}</span>}
+                </p>
+                <p className="mt-1 text-base text-white">
+                  {fase === "preguntando" && parcial ? (
+                    <span className="text-slate-300">«{parcial}»…</span>
+                  ) : entendido ? (
+                    entendido.escuche ? `«${entendido.escuche}»` : <span className="text-slate-400">No respondió</span>
+                  ) : (
+                    <span className="text-slate-500">{escucha ? "Escuchando…" : "Modo conversación pausado"}</span>
+                  )}
+                </p>
+              </div>
+              {entendido && (
+                <div
+                  className={cn(
+                    "rounded-xl p-3",
+                    entendido.tono === "ok" && "bg-emerald-500/10",
+                    entendido.tono === "alerta" && "bg-amber-500/15",
+                    entendido.tono === "info" && "bg-white/5",
+                  )}
+                >
+                  <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
+                    <Brain className="size-3.5" /> Entendí
+                    {entendido.fuente && (
+                      <span className="normal-case tracking-normal text-slate-500">
+                        · {entendido.fuente === "ia" ? "IA" : "reglas de respaldo"}
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-1 font-medium text-white">{entendido.entendi ?? "Pensando…"}</p>
+                  {entendido.detalle && <p className="mt-0.5 text-xs text-slate-400">{entendido.detalle}</p>}
+                </div>
+              )}
+            </div>
+          )}
           <ol className="max-h-[70dvh] flex-1 space-y-2 overflow-y-auto p-4 text-sm">
             {log.length === 0 && <li className="text-slate-500">Todavía no pasó nada.</li>}
             {log.map((l) => (

@@ -14,4 +14,4 @@ export type CasaJson = {
   hubOnline: boolean;
 };
 
-export type EventosJson = { activos: EventoJson[]; recientes: EventoJson[] };
+export type EventosJson = { activos: EventoJson[]; recientes: EventoJson[]; silencioHasta: string | null };
