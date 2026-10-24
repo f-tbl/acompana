@@ -1,4 +1,4 @@
-import { ArrowRight, BellRing, FileHeart, History, House, ShieldCheck } from "lucide-react";
+import { ArrowRight, BellRing, FileHeart, History, House, ShieldCheck, Watch } from "lucide-react";
 import Link from "next/link";
 import { QrLink } from "@/components/qr-link";
 import { NIVELES, type Nivel } from "@/lib/score";
@@ -16,6 +16,12 @@ const PANTALLAS = [
     titulo: "App del cuidador",
     texto: "Alertas en tiempo real con el video corto del incidente, botón «Pedir ambulancia» y pedidos por voz.",
   },
+  {
+    href: "/reloj",
+    icono: Watch,
+    titulo: "Reloj (simulador)",
+    texto: "Hace de reloj inteligente: manda pulso, oxígeno, pasos y caídas. La casa reacciona igual que con la cámara.",
+  },
   { href: "/historial", icono: History, titulo: "Historial", texto: "Registro diario de eventos, alertas y falsas alarmas." },
   { href: "/perfiles", icono: FileHeart, titulo: "Fichas médicas", texto: "Lo que se envía a emergencias junto con la ubicación." },
 ];
@@ -25,6 +31,7 @@ const GUION = [
   "Emergencia: una persona «se cae» y no responde. Al celular llega la alerta con el video.",
   "El cuidador toca «Pedir ambulancia»: se envían la ubicación y la ficha (simulado).",
   "Niño: cambiá el perfil a Tomi y decí «tengo sed». El pedido llega al celular.",
+  "Reloj: en /reloj tocá «Pulso alto». La casa pregunta si está bien y el cuidador ve la alerta con el pulso.",
 ];
 
 export default function Home() {

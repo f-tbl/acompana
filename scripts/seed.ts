@@ -1,7 +1,7 @@
 // Carga los datos del demo: la casa de Rosa (82, demencia leve) y su nieto Tomi (4).
 // Uso: npm run db:seed  (borra todo y vuelve a cargar)
 import { createClient } from "@supabase/supabase-js";
-import { contacts, events, fichaLinks, homes, persons } from "../src/db/schema";
+import { contacts, events, fichaLinks, homes, lecturas, persons } from "../src/db/schema";
 
 try {
   process.loadEnvFile(".env.local");
@@ -12,6 +12,7 @@ try {
 async function main() {
   // Import dinámico: el cliente lee DATABASE_URL al cargarse, después de loadEnvFile.
   const { db } = await import("../src/db");
+  await db.delete(lecturas);
   await db.delete(fichaLinks);
   await db.delete(events);
   await db.delete(contacts);

@@ -4,6 +4,8 @@ import { Ambulance, BellRing, Check, CircleCheck, Hand, History, PauseCircle, Si
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TarjetaReloj } from "@/components/reloj/tarjeta-reloj";
+import { useRelojes } from "@/components/reloj/use-relojes";
 import { proximoEscalamiento } from "@/lib/escalation";
 import { api, avisarCambio, useEnVivo } from "@/lib/live";
 import { NIVELES, NOMBRE_EVENTO, NOMBRE_RESPUESTA, type Nivel, type Respuesta } from "@/lib/score";
@@ -20,6 +22,7 @@ export function AppCuidador() {
   const [enviando, setEnviando] = useState<string | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
   const vistosRef = useRef<Set<string> | null>(null);
+  const relojes = useRelojes(3000);
 
   const refrescar = useCallback(async () => {
     try {
@@ -177,6 +180,17 @@ export function AppCuidador() {
           </div>
         ))}
       </section>
+
+      {casa && relojes && casa.persons.some((p) => relojes[p.id]) && (
+        <section className="space-y-3 px-4 pt-6">
+          <h2 className="text-sm font-semibold text-stone-500">Reloj</h2>
+          {casa.persons
+            .filter((p) => relojes[p.id])
+            .map((p) => (
+              <TarjetaReloj key={p.id} estado={relojes[p.id]} titulo={`${p.avatar} ${p.name}`} />
+            ))}
+        </section>
+      )}
 
       {historial.length > 0 && (
         <section className="px-4 pt-6">

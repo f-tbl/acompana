@@ -1,6 +1,7 @@
 import {
   boolean,
   doublePrecision,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -21,7 +22,11 @@ export const tipoEventoEnum = pgEnum("tipo_evento", [
   "pedido_ayuda",
   "boton_panico",
   "pedido",
+  "signos_vitales", // el reloj reporta pulso u oxígeno fuera de rango
 ]);
+
+// Lo que mide el reloj. Los nombres siguen el formato de las lecturas que manda el dispositivo.
+export const metricaEnum = pgEnum("metrica", ["heart_rate", "spo2", "steps", "fall"]);
 
 export const estadoEventoEnum = pgEnum("estado_evento", [
   "registrado", // nivel 1–3: solo historial + notificación
@@ -147,9 +152,30 @@ export const fichaLinks = pgTable("ficha_links", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Lecturas del reloj (real o simulado). El simulador manda una tanda cada 2 s. */
+export const lecturas = pgTable(
+  "lecturas",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id, { onDelete: "cascade" }),
+    metric: metricaEnum("metric").notNull(),
+    value: doublePrecision("value").notNull(),
+    unit: text("unit").notNull(),
+    source: text("source").notNull(),
+    simulated: boolean("simulated").notNull().default(false),
+    ts: timestamp("ts", { withTimezone: true }).notNull(), // hora del dispositivo
+    // Hora del servidor: decide si el reloj está conectado (no depende del reloj del dispositivo).
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("lecturas_persona_recibida").on(t.personId, t.receivedAt)],
+);
+
 export type Home = typeof homes.$inferSelect;
 export type Person = typeof persons.$inferSelect;
 export type Contact = typeof contacts.$inferSelect;
 export type Event = typeof events.$inferSelect;
 export type TipoEvento = (typeof tipoEventoEnum.enumValues)[number];
 export type EstadoEvento = (typeof estadoEventoEnum.enumValues)[number];
+export type Metrica = (typeof metricaEnum.enumValues)[number];

@@ -1,4 +1,5 @@
 import type { ContextoDiario, FactorPuntaje, TipoEvento } from "@/db/schema";
+import { evaluarSignos, type Signos } from "./vitales";
 
 export type Respuesta =
   | "bien" // responde con coherencia que está bien
@@ -19,6 +20,7 @@ const BASE: Record<TipoEvento, number> = {
   pedido_ayuda: 5,
   boton_panico: 7,
   pedido: 1,
+  signos_vitales: 5,
 };
 
 const AJUSTE_RESPUESTA: Record<Respuesta, number> = {
@@ -45,6 +47,7 @@ export const NOMBRE_EVENTO: Record<TipoEvento, string> = {
   pedido_ayuda: "Pedido de ayuda por voz",
   boton_panico: "Botón de pánico",
   pedido: "Pedido",
+  signos_vitales: "Signos vitales fuera de rango",
 };
 
 export const NOMBRE_RESPUESTA: Record<Respuesta, string> = {
@@ -95,8 +98,10 @@ export function calcularPuntaje(input: {
   respuesta: Respuesta;
   hora: number; // hora local de la casa, 0–23
   contexto?: ContextoDiario;
+  /** Último pulso y oxígeno del reloj, si está conectado. */
+  signos?: Signos;
 }) {
-  const { tipo, respuesta, hora, contexto } = input;
+  const { tipo, respuesta, hora, contexto, signos } = input;
   const factores: FactorPuntaje[] = [{ factor: NOMBRE_EVENTO[tipo], puntos: BASE[tipo] }];
 
   if (respuesta !== "no_aplica") {
@@ -113,11 +118,18 @@ export function calcularPuntaje(input: {
     if (contexto?.durmioMal) {
       factores.push({ factor: "Durmió mal los días previos", puntos: 1 });
     }
+    if (signos) {
+      for (const a of evaluarSignos(signos)) {
+        factores.push({ factor: `Reloj: ${a.mensaje}`, puntos: a.severidad === "critica" ? 2 : 1 });
+      }
+    }
   }
 
   let score = factores.reduce((acc, f) => acc + f.puntos, 0);
   // Un pedido de ayuda explícito nunca queda en "solo registro".
   if (respuesta === "pide_ayuda") score = Math.max(score, 4);
+  // Si el aviso lo dio el reloj, el cuidador se entera aunque la persona diga que está bien.
+  if (tipo === "signos_vitales") score = Math.max(score, 4);
   score = Math.min(10, Math.max(1, score));
 
   return { score, nivel: nivelDe(score), factores };

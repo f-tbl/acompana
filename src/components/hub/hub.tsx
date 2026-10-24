@@ -1,8 +1,9 @@
 "use client";
 
 import type { PoseLandmarker as PoseLandmarkerT } from "@mediapipe/tasks-vision";
-import { Brain, Camera, CameraOff, Ear, EarOff, Mic, Play, Send, Sparkles, Volume2 } from "lucide-react";
+import { Brain, Camera, CameraOff, Ear, EarOff, Mic, Play, Send, Sparkles, Volume2, Watch } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRelojes } from "@/components/reloj/use-relojes";
 import type { Person, TipoEvento } from "@/db/schema";
 import { AMBIENTES, frasesDeCalma } from "@/lib/calm";
 import { ANSWER_TIMEOUT_MS, FALSE_ALARM_SILENCE_SECONDS } from "@/lib/config";
@@ -70,6 +71,7 @@ export function Hub() {
   const calmandoRef = useRef<string | null>(null);
   const seguidosRef = useRef(new Map<string, EventoJson["status"]>());
   const silencioRef = useRef(0); // ms epoch: hasta cuándo se ignoran las detecciones automáticas
+  const alertasRelojRef = useRef(new Set<string>()); // alertas del reloj que ya generaron un incidente
   const lineaId = useRef(0);
 
   // Refs con el último valor para usar dentro de callbacks de larga vida (rAF, voz).
@@ -80,6 +82,8 @@ export function Hub() {
 
   const camaraPermitida = AMBIENTES.find((a) => a.nombre === ambiente)?.camara ?? true;
   const persona = casa?.persons.find((p) => p.id === personId);
+  const relojes = useRelojes(2000, fase !== "inactivo");
+  const reloj = relojes?.[personId];
 
   const anotar = useCallback((quien: Linea["quien"], texto: string) => {
     const hora = new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -131,7 +135,8 @@ export function Hub() {
   );
 
   const manejarIncidente = useCallback(
-    async (tipo: TipoEvento, simulado = false) => {
+    /** origen "reloj": lo detectó el reloj, no la cámara ni el micrófono. */
+    async (tipo: TipoEvento, simulado = false, origen?: "reloj") => {
       const p = personaActual();
       if (!p || ocupadoRef.current) return;
       const restante = Math.ceil((silencioRef.current - Date.now()) / 1000);
@@ -142,7 +147,11 @@ export function Hub() {
       }
       ocupadoRef.current = true;
       detectorRef.current.reiniciar(performance.now());
-      anotar("info", `${simulado ? "Simulado" : "Detectado"}: ${NOMBRE_EVENTO[tipo]} en ${estadoRef.current.ambiente}`);
+      const room = origen === "reloj" ? `${estadoRef.current.ambiente} (reloj)` : estadoRef.current.ambiente;
+      anotar(
+        "info",
+        `${simulado ? "Simulado" : origen === "reloj" ? "Detectado por el reloj" : "Detectado"}: ${NOMBRE_EVENTO[tipo]} en ${estadoRef.current.ambiente}`,
+      );
       setFase("preguntando");
 
       const clip = recorderRef.current?.capturar() ?? Promise.resolve(null);
@@ -161,7 +170,7 @@ export function Hub() {
           {
             personId: p.id,
             tipo,
-            room: estadoRef.current.ambiente,
+            room,
             texto: respuesta,
             clipExt: recorderRef.current?.extension,
           },
@@ -338,6 +347,23 @@ export function Hub() {
     incidenteRef.current = manejarIncidente;
   });
 
+  // Reloj: una alerta nueva (caída o signos fuera de rango) dispara el mismo flujo que la cámara.
+  useEffect(() => {
+    alertasRelojRef.current = new Set();
+  }, [personId]);
+  useEffect(() => {
+    if (fase === "inactivo" || !reloj) return;
+    const vigentes = reloj.alertas.filter((a) => a.tipo !== "sin_datos");
+    const nuevas = vigentes.filter((a) => !alertasRelojRef.current.has(a.tipo));
+    if (nuevas.length > 0 && ocupadoRef.current) return; // se reintenta con la próxima lectura
+    // Las que se resolvieron salen del conjunto y pueden volver a disparar.
+    alertasRelojRef.current = new Set(vigentes.map((a) => a.tipo));
+    if (nuevas.length === 0) return;
+    const caida = nuevas.find((a) => a.tipo === "caida");
+    anotar("info", `Reloj: ${(caida ?? nuevas[0]).mensaje}`);
+    void incidenteRef.current(caida ? "caida" : "signos_vitales", false, "reloj");
+  }, [reloj, fase]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function iniciar() {
     desbloquearAudio();
     setFase("vigilando");
@@ -507,6 +533,12 @@ export function Hub() {
                 {camaraPermitida && modelo && (
                   <Chip tono={modelo === "listo" ? "ok" : modelo === "error" ? "error" : "info"}>
                     <Camera className="size-3" /> {modelo === "listo" ? "Detección activa" : modelo === "error" ? "Sin detección" : "Cargando modelo…"}
+                  </Chip>
+                )}
+                {reloj && (
+                  <Chip tono={!reloj.conectado ? "error" : reloj.alertas.length ? "alerta" : "ok"}>
+                    <Watch className="size-3" />
+                    {reloj.conectado ? `${reloj.pulso ?? "—"} lpm · ${reloj.spo2 ?? "—"}%` : "Reloj sin datos"}
                   </Chip>
                 )}
                 {silencioHasta > ahora && ahora > 0 && (
