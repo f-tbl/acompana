@@ -2,6 +2,9 @@
 
 Sistema de seguridad en el hogar para personas sin autonomía personal (ver `spec.md`).
 
+Este sistema fue creado como una entrega de la hackaton Shippear. 
+
+
 ## Stack
 
 | Capa | Qué se usa |
